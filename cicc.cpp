@@ -1,8 +1,8 @@
-#include <llvm/Constants.h>
-#include <llvm/Instructions.h>
-#include <llvm/LLVMContext.h>
-#include <llvm/Module.h>
-#include "llvm/PassManager.h"
+#include <llvm/IR/Constants.h>
+#include <llvm/IR/Instructions.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
+#include "llvm/IR/PassManager.h"
 #include <llvm/Bitcode/ReaderWriter.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/raw_ostream.h>
@@ -167,7 +167,7 @@ static void markParallelBasicBlocks(Module* module, vector<BasicBlock*>& paralle
 		{
 			for (Function::iterator bi = fi->begin(), be = fi->end(); bi != be; bi++)
 			{
-				BasicBlock* b = bi;
+				BasicBlock* b = &*bi;
 				if (restart && (b != restart)) continue;
 
 				restart = NULL;
@@ -259,7 +259,7 @@ static void storeInZeroThreadOnly(Module* module, vector<BasicBlock*>& parallelB
 		{
 			for (Function::iterator bi = fi->begin(), be = fi->end(); bi != be; bi++)
 			{
-				BasicBlock* b = bi;
+				BasicBlock* b = &*bi;
 				if (restart && (b != restart)) continue;
 
 				restart = NULL;
@@ -360,10 +360,11 @@ nvvmResult nvvmAddModuleToProgram(nvvmProgram prog, const char *bitcode, size_t 
 		string source = "";
 		source.reserve(size);
 		source.assign(bitcode, bitcode + size);
-		MemoryBuffer *input = MemoryBuffer::getMemBuffer(source);
+		std::unique_ptr<MemoryBuffer> input = MemoryBuffer::getMemBuffer(source);
 		string err;
 		LLVMContext &context = getGlobalContext();
-		initial_module = ParseBitcodeFile(input, context, &err);
+		ErrorOr<std::unique_ptr<llvm::Module>> init_module = parseBitcodeFile(input.get()->getMemBufferRef(), context);
+                initial_module =init_module.get().release();
 		if (!initial_module)
 			cerr << "Error parsing module bitcode : " << err;
 
@@ -373,12 +374,11 @@ nvvmResult nvvmAddModuleToProgram(nvvmProgram prog, const char *bitcode, size_t 
 		SmallVector<char, 128> output;
 		raw_svector_ostream outputStream(output);
 		WriteBitcodeToFile(initial_module, outputStream);
-		outputStream.flush();
+		//outputStream.flush();
 
 		// Call real nvvmAddModuleToProgram
 		return nvvmAddModuleToProgram_real(prog, output.data(), output.size(), name);
 	}
-
 	called_compile = true;
 
 	// Call real nvvmAddModuleToProgram
